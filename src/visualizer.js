@@ -200,7 +200,11 @@ export default class Visualizer {
     this.renderer.setRendererSize(width, height, opts);
   }
 
-  render () {
-    this.renderer.render();
+  render (FFTsample) {
+    this.renderer.render(FFTsample);
+  }
+
+  listen () {
+    this.renderer.listen();
   }
 }

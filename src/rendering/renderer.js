@@ -291,7 +291,8 @@ export default class Renderer {
   loadPreset (preset, blendTime) {
     this.randomizeBlendPattern();
     this.blending = true;
-    this.blendStartTime = this.time;
+    this.blendStartTime = window.currRenderFrame;
+    console.log('Loading preset:', preset, 'Blend start frame', this.blendStartTime);
     this.blendDuration = blendTime;
     this.blendProgress = 0;
 
@@ -419,13 +420,6 @@ export default class Renderer {
 
     this.lastTime = newTime;
     this.time += 1.0 / this.fps;
-
-    if (this.blending) {
-      this.blendProgress = (this.time - this.blendStartTime) / this.blendDuration;
-      if (this.blendProgress > 1.0) {
-        this.blending = false;
-      }
-    }
 
     const newHistTime = this.timeHist[this.timeHist.length - 1] + elapsed;
     this.timeHist.push(newHistTime);
@@ -705,7 +699,7 @@ export default class Renderer {
                                  this.gl.TEXTURE_2D, targetTexture, 0);
   }
 
-  render () {
+  listen () {
     this.audio.sampleAudio();
 
     const audioTime = performance.now();
@@ -736,6 +730,23 @@ export default class Renderer {
       pixelsy: this.texsizeY
     };
 
+    window.FFTsamples = window.FFTsamples || [];
+    window.FFTsamples.push(globalVars);
+  }
+
+  render (FFTsample) {
+    this.frameNum += 1;
+
+    // console.log(this.blending, FFTsample.frame, this.blendStartTime, this.blendDuration);
+    if (this.blending) {
+      this.blendProgress =
+        ((FFTsample.frame - this.blendStartTime) / 60) / this.blendDuration;
+      if (this.blendProgress > 1.0) {
+        this.blending = false;
+      }
+    }
+
+    const globalVars = FFTsample;
     const prevGlobalVars = Object.assign({}, globalVars);
     prevGlobalVars.gmegabuf = this.prevPresetEquationRunner.gmegabuf;
 
@@ -902,7 +913,7 @@ export default class Renderer {
                                         mdVSFrame, this.warpColor);
     } else {
       this.prevCompShader.renderQuadTexture(false, this.targetTexture,
-                                            this.blurTexture1, this.blurTexture2, this.blurTexture3,
+      this.blurTexture1, this.blurTexture2, this.blurTexture3,
                                             blurMins, blurMaxs,
                                             this.prevPresetEquationRunner.mdVSFrame,
                                             this.warpColor);
