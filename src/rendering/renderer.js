@@ -10,9 +10,11 @@ import MotionVectors from './motionVectors/motionVectors';
 import WarpShader from './shaders/warp';
 import CompShader from './shaders/comp';
 import OutputShader from './shaders/output';
+import ResampleShader from './shaders/resample';
 import BlurShader from './shaders/blur/blur';
 import Noise from '../noise/noise';
 import ImageTextures from '../image/imageTextures';
+import BlendPattern from './blendPattern';
 import Utils from '../utils';
 
 export default class Renderer {
@@ -34,10 +36,11 @@ export default class Renderer {
 
     this.width = opts.width || 1200;
     this.height = opts.height || 900;
-    this.mesh_width = opts.mesh_width || 32;
-    this.mesh_height = opts.mesh_height || 24;
-    this.pixelRatio = opts.pixelRatio || 1;
+    this.mesh_width = opts.meshWidth || 48;
+    this.mesh_height = opts.meshHeight || 36;
+    this.pixelRatio = opts.pixelRatio || window.devicePixelRatio || 1;
     this.textureRatio = opts.textureRatio || 1;
+    this.outputFXAA = opts.outputFXAA || false;
     this.texsizeX = this.width * this.pixelRatio * this.textureRatio;
     this.texsizeY = this.height * this.pixelRatio * this.textureRatio;
     this.aspectx = (this.texsizeY > this.texsizeX) ? this.texsizeX / this.texsizeY : 1;
@@ -60,7 +63,6 @@ export default class Renderer {
       [0.0625, 0.0625]
     ];
 
-    this.lastAudioTime = performance.now();
     this.audioLevels = new AudioLevels(this.audio);
 
     this.prevFrameBuffer = this.gl.createFramebuffer();
@@ -114,6 +116,8 @@ export default class Renderer {
     this.innerBorder = new Border(gl, params);
     this.outerBorder = new Border(gl, params);
     this.motionVectors = new MotionVectors(gl, params);
+    this.blendPattern = new BlendPattern(params);
+    this.resampleShader = new ResampleShader(gl);
 
     this.warpUVs = new Float32Array((this.mesh_width + 1) * (this.mesh_height + 1) * 2);
     this.warpColor = new Float32Array((this.mesh_width + 1) * (this.mesh_height + 1) * 4);
@@ -154,142 +158,8 @@ export default class Renderer {
     return 0;
   }
 
-  genPlasma (x0, x1, y0, y1, dt) {
-    const midx = Math.floor((x0 + x1) / 2);
-    const midy = Math.floor((y0 + y1) / 2);
-    let t00 = this.vertInfoC[(y0 * (this.mesh_width + 1)) + x0];
-    let t01 = this.vertInfoC[(y0 * (this.mesh_width + 1)) + x1];
-    let t10 = this.vertInfoC[(y1 * (this.mesh_width + 1)) + x0];
-    let t11 = this.vertInfoC[(y1 * (this.mesh_width + 1)) + x1];
-
-    if ((y1 - y0) >= 2) {
-      if (x0 === 0) {
-        this.vertInfoC[(midy * (this.mesh_width + 1)) + x0] =
-          (0.5 * (t00 + t10)) + (((Math.random() * 2) - 1) * dt * this.aspecty);
-      }
-      this.vertInfoC[(midy * (this.mesh_width + 1)) + x1] =
-        (0.5 * (t01 + t11)) + (((Math.random() * 2) - 1) * dt * this.aspecty);
-    }
-    if ((x1 - x0) >= 2) {
-      if (y0 === 0) {
-        this.vertInfoC[(y0 * (this.mesh_width + 1)) + midx] =
-          (0.5 * (t00 + t01)) + (((Math.random() * 2) - 1) * dt * this.aspectx);
-      }
-      this.vertInfoC[(y1 * (this.mesh_width + 1)) + midx] =
-        (0.5 * (t10 + t11)) + (((Math.random() * 2) - 1) * dt * this.aspectx);
-    }
-
-    if ((y1 - y0) >= 2 && (x1 - x0) >= 2) {
-      t00 = this.vertInfoC[(midy * (this.mesh_width + 1)) + x0];
-      t01 = this.vertInfoC[(midy * (this.mesh_width + 1)) + x1];
-      t10 = this.vertInfoC[(y0 * (this.mesh_width + 1)) + midx];
-      t11 = this.vertInfoC[(y1 * (this.mesh_width + 1)) + midx];
-      this.vertInfoC[(midy * (this.mesh_width + 1)) + midx] =
-        (0.25 * (t10 + t11 + t00 + t01)) + (((Math.random() * 2) - 1) * dt);
-
-      this.genPlasma(x0, midx, y0, midy, dt * 0.5);
-      this.genPlasma(midx, x1, y0, midy, dt * 0.5);
-      this.genPlasma(x0, midx, midy, y1, dt * 0.5);
-      this.genPlasma(midx, x1, midy, y1, dt * 0.5);
-    }
-  }
-
-  randomizeBlendPattern () {
-    this.vertInfoA = new Float32Array((this.mesh_width + 1) * (this.mesh_height + 1));
-    this.vertInfoC = new Float32Array((this.mesh_width + 1) * (this.mesh_height + 1));
-
-    const mixType = 1 + Math.floor(Math.random() * 3);
-    if (mixType === 0) {
-      let nVert = 0;
-      for (let y = 0; y <= this.mesh_height; y++) {
-        for (let x = 0; x <= this.mesh_width; x++) {
-          this.vertInfoA[nVert] = 1;
-          this.vertInfoC[nVert] = 0;
-          nVert += 1;
-        }
-      }
-    } else if (mixType === 1) {
-      const ang = Math.random() * 6.28;
-      const vx = Math.cos(ang);
-      const vy = Math.sin(ang);
-      const band = 0.1 + (0.2 * Math.random());
-      const invBand = 1.0 / band;
-
-      let nVert = 0;
-      for (let y = 0; y <= this.mesh_height; y++) {
-        const fy = (y / this.mesh_height) * this.aspecty;
-        for (let x = 0; x <= this.mesh_width; x++) {
-          const fx = (x / this.mesh_width) * this.aspectx;
-
-          let t = ((fx - 0.5) * vx) + ((fy - 0.5) * vy) + 0.5;
-          t = ((t - 0.5) / Math.sqrt(2)) + 0.5;
-
-          this.vertInfoA[nVert] = invBand * (1 + band);
-          this.vertInfoC[nVert] = -invBand + (invBand * t);
-          nVert += 1;
-        }
-      }
-    } else if (mixType === 2) {
-      const band = 0.12 + (0.13 * Math.random());
-      const invBand = 1.0 / band;
-
-      this.vertInfoC[0] = Math.random();
-      this.vertInfoC[this.mesh_width] = Math.random();
-      this.vertInfoC[this.mesh_height * (this.mesh_width + 1)] = Math.random();
-      this.vertInfoC[(this.mesh_height * (this.mesh_width + 1)) + this.mesh_width] = Math.random();
-      this.genPlasma(0, this.mesh_width, 0, this.mesh_height, 0.25);
-
-      let minc = this.vertInfoC[0];
-      let maxc = this.vertInfoC[0];
-
-      let nVert = 0;
-      for (let y = 0; y <= this.mesh_height; y++) {
-        for (let x = 0; x <= this.mesh_width; x++) {
-          if (minc > this.vertInfoC[nVert]) {
-            minc = this.vertInfoC[nVert];
-          }
-          if (maxc < this.vertInfoC[nVert]) {
-            maxc = this.vertInfoC[nVert];
-          }
-          nVert += 1;
-        }
-      }
-
-      const mult = 1.0 / (maxc - minc);
-      nVert = 0;
-      for (let y = 0; y <= this.mesh_height; y++) {
-        for (let x = 0; x <= this.mesh_width; x++) {
-          const t = (this.vertInfoC[nVert] - minc) * mult;
-          this.vertInfoA[nVert] = invBand * (1 + band);
-          this.vertInfoC[nVert] = -invBand + (invBand * t);
-          nVert += 1;
-        }
-      }
-    } else if (mixType === 3) {
-      const band = 0.02 + (0.14 * Math.random()) + (0.34 * Math.random());
-      const invBand = 1.0 / band;
-      const dir = ((Math.floor(Math.random() * 2) * 2) - 1);
-
-      let nVert = 0;
-      for (let y = 0; y <= this.mesh_height; y++) {
-        const dy = ((y / this.mesh_height) - 0.5) * this.aspecty;
-        for (let x = 0; x <= this.mesh_width; x++) {
-          const dx = ((x / this.mesh_width) - 0.5) * this.aspectx;
-          let t = Math.sqrt((dx * dx) + (dy * dy)) * 1.41421;
-          if (dir === -1) {
-            t = 1 - t;
-          }
-
-          this.vertInfoA[nVert] = invBand * (1 + band);
-          this.vertInfoC[nVert] = -invBand + (invBand * t);
-          nVert += 1;
-        }
-      }
-    }
-  }
-
   loadPreset (preset, blendTime) {
-    this.randomizeBlendPattern();
+    this.blendPattern.createBlendPattern();
     this.blending = true;
     this.blendStartTime = window.currRenderFrame;
     console.log('Loading preset:', preset, 'Blend start frame', this.blendStartTime);
@@ -358,10 +228,13 @@ export default class Renderer {
   }
 
   setRendererSize (width, height, opts) {
+    const oldTexsizeX = this.texsizeX;
+    const oldTexsizeY = this.texsizeY;
+
     this.width = width;
     this.height = height;
-    this.mesh_width = opts.mesh_width || this.mesh_width;
-    this.mesh_height = opts.mesh_height || this.mesh_height;
+    this.mesh_width = opts.meshWidth || this.mesh_width;
+    this.mesh_height = opts.meshHeight || this.mesh_height;
     this.pixelRatio = opts.pixelRatio || this.pixelRatio;
     this.textureRatio = opts.textureRatio || this.textureRatio;
     this.texsizeX = width * this.pixelRatio * this.textureRatio;
@@ -369,11 +242,32 @@ export default class Renderer {
     this.aspectx = (this.texsizeY > this.texsizeX) ? this.texsizeX / this.texsizeY : 1;
     this.aspecty = (this.texsizeX > this.texsizeY) ? this.texsizeY / this.texsizeX : 1;
 
-    this.bindFrameBufferTexture(this.prevFrameBuffer, this.prevTexture);
-    this.bindFrameBufferTexture(this.targetFrameBuffer, this.targetTexture);
-    this.bindFrameBufferTexture(this.compFrameBuffer, this.compTexture);
+    if (this.texsizeX !== oldTexsizeX || this.texsizeY !== oldTexsizeY) {
+      // copy target texture, because we flip prev/target at start of render
+      const targetTextureNew = this.gl.createTexture();
+      this.bindFrameBufferTexture(this.targetFrameBuffer, targetTextureNew);
+      this.bindFrambufferAndSetViewport(this.targetFrameBuffer, this.texsizeX, this.texsizeY);
+
+      this.resampleShader.renderQuadTexture(this.targetTexture);
+
+      this.targetTexture = targetTextureNew;
+
+      this.bindFrameBufferTexture(this.prevFrameBuffer, this.prevTexture);
+      this.bindFrameBufferTexture(this.compFrameBuffer, this.compTexture);
+    }
 
     this.updateGlobals();
+  }
+
+  setInternalMeshSize (width, height) {
+    this.mesh_width = width;
+    this.mesh_height = height;
+
+    this.updateGlobals();
+  }
+
+  setOutputAA (useAA) {
+    this.outputFXAA = useAA;
   }
 
   updateGlobals () {
@@ -406,19 +300,25 @@ export default class Renderer {
     this.innerBorder.updateGlobals(params);
     this.outerBorder.updateGlobals(params);
     this.motionVectors.updateGlobals(params);
+    this.blendPattern.updateGlobals(params);
 
     this.warpUVs = new Float32Array((this.mesh_width + 1) * (this.mesh_height + 1) * 2);
     this.warpColor = new Float32Array((this.mesh_width + 1) * (this.mesh_height + 1) * 4);
   }
 
-  calcTimeAndFPS () {
-    const newTime = performance.now();
-    let elapsed = (newTime - this.lastTime) / 1000.0;
-    if (elapsed > 1.0 || elapsed < 0.0 || this.frame < 2) {
-      elapsed = 1.0 / 30.0;
+  calcTimeAndFPS (elapsedTime) {
+    let elapsed;
+    if (elapsedTime) {
+      elapsed = elapsedTime;
+    } else {
+      const newTime = performance.now();
+      elapsed = (newTime - this.lastTime) / 1000.0;
+      if (elapsed > 1.0 || elapsed < 0.0 || this.frame < 2) {
+        elapsed = 1.0 / 30.0;
+      }
+      this.lastTime = newTime;
     }
 
-    this.lastTime = newTime;
     this.time += 1.0 / this.fps;
 
     const newHistTime = this.timeHist[this.timeHist.length - 1] + elapsed;
@@ -551,7 +451,8 @@ export default class Renderer {
           this.warpColor[offsetColor + 2] = 1;
           this.warpColor[offsetColor + 3] = 1;
         } else {
-          let mix2 = (this.vertInfoA[offset / 2] * this.blendProgress) + this.vertInfoC[offset / 2];
+          let mix2 = (this.blendPattern.vertInfoA[offset / 2] * this.blendProgress) +
+                      this.blendPattern.vertInfoC[offset / 2];
           mix2 = Math.clamp(mix2, 0, 1);
 
           this.warpUVs[offset] = (this.warpUVs[offset] * mix2) + (u * (1 - mix2));
@@ -572,7 +473,7 @@ export default class Renderer {
   }
 
   static mixFrameEquations (blendProgress, mdVSFrame, mdVSFramePrev) {
-    const mix = 0.5 - (0.5 * Math.cos(blendProgress * 3.1415926535898));
+    const mix = 0.5 - (0.5 * Math.cos(blendProgress * Math.PI));
     const mix2 = 1 - mix;
     const snapPoint = 0.5;
 
@@ -702,15 +603,16 @@ export default class Renderer {
   listen () {
     this.audio.sampleAudio();
 
-    const audioTime = performance.now();
-    const audioDiff = audioTime - this.lastAudioTime;
-    if (audioDiff > 30) {
-      this.audioLevels.updateAudioLevels(audioDiff, this.frameNum);
-      this.lastAudioTime = audioTime;
+    if (audioLevels) {
+      this.audio.updateAudio(
+        audioLevels.timeByteArray,
+        audioLevels.timeByteArrayL,
+        audioLevels.timeByteArrayR
+      );
+    } else {
+      this.audio.sampleAudio();
     }
-
-    this.calcTimeAndFPS();
-    this.frameNum += 1;
+    this.audioLevels.updateAudioLevels(this.fps, this.frameNum);
 
     const globalVars = {
       frame: this.frameNum,
@@ -898,8 +800,11 @@ export default class Renderer {
     ];
     this.innerBorder.drawBorder(innerColor, mdVSFrameMixed.ib_size, mdVSFrameMixed.ob_size);
 
-
-    this.bindFrambufferAndSetViewport(this.compFrameBuffer, this.texsizeX, this.texsizeY);
+    if (this.outputFXAA) {
+      this.bindFrambufferAndSetViewport(this.compFrameBuffer, this.texsizeX, this.texsizeY);
+    } else {
+      this.bindFrambufferAndSetViewport(null, this.width, this.height);
+    }
 
     this.gl.clear(this.gl.COLOR_BUFFER_BIT);
     this.gl.enable(this.gl.BLEND);
@@ -924,10 +829,13 @@ export default class Renderer {
                                         mdVSFrameMixed, this.warpColor);
     }
 
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.compTexture);
-    this.gl.generateMipmap(this.gl.TEXTURE_2D);
 
-    this.bindFrambufferAndSetViewport(null, this.width, this.height);
-    this.outputShader.renderQuadTexture(this.compTexture);
+    if (this.outputFXAA) {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.compTexture);
+      this.gl.generateMipmap(this.gl.TEXTURE_2D);
+
+      this.bindFrambufferAndSetViewport(null, this.width, this.height);
+      this.outputShader.renderQuadTexture(this.compTexture);
+    }
   }
 }

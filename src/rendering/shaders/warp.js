@@ -103,6 +103,8 @@ export default class WarpShader {
   updateGlobals (opts) {
     this.texsizeX = opts.texsizeX;
     this.texsizeY = opts.texsizeY;
+    this.mesh_width = opts.mesh_width;
+    this.mesh_height = opts.mesh_height;
     this.aspectx = opts.aspectx;
     this.aspecty = opts.aspecty;
     this.invAspectx = 1.0 / this.aspectx;
@@ -262,7 +264,7 @@ export default class WarpShader {
                                       uniform vec4 rand_frame;
                                       uniform vec4 rand_preset;
 
-                                      float PI = 3.14159265358979323846264;
+                                      float PI = ${Math.PI};
 
                                       ${fragShaderHeaderText}
 

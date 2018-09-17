@@ -139,7 +139,7 @@ export default class Visualizer {
     this.audio.disconnectAudio(audioNode);
   }
 
-  loadPreset (presetMap, blendTime) {
+  loadPreset (presetMap, blendTime = 0) {
     const preset = Object.assign({}, presetMap);
     preset.baseVals = Object.assign({}, this.baseValsDefaults, preset.baseVals);
     for (let i = 0; i < preset.shapes.length; i++) {
@@ -198,6 +198,14 @@ export default class Visualizer {
 
   setRendererSize (width, height, opts = {}) {
     this.renderer.setRendererSize(width, height, opts);
+  }
+
+  setInternalMeshSize (width, height) {
+    this.renderer.setInternalMeshSize(width, height);
+  }
+
+  setOutputAA (useAA) {
+    this.renderer.setOutputAA(useAA);
   }
 
   render (FFTsample) {
