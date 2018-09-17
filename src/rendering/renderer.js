@@ -162,7 +162,7 @@ export default class Renderer {
     this.blendPattern.createBlendPattern();
     this.blending = true;
     this.blendStartTime = window.currRenderFrame;
-    console.log('Loading preset:', preset, 'Blend start frame', this.blendStartTime);
+    // console.log('Loading preset:', preset, 'Blend start frame', this.blendStartTime);
     this.blendDuration = blendTime;
     this.blendProgress = 0;
 
@@ -602,16 +602,6 @@ export default class Renderer {
 
   listen () {
     this.audio.sampleAudio();
-
-    if (audioLevels) {
-      this.audio.updateAudio(
-        audioLevels.timeByteArray,
-        audioLevels.timeByteArrayL,
-        audioLevels.timeByteArrayR
-      );
-    } else {
-      this.audio.sampleAudio();
-    }
     this.audioLevels.updateAudioLevels(this.fps, this.frameNum);
 
     const globalVars = {
