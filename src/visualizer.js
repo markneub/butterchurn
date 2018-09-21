@@ -212,6 +212,10 @@ export default class Visualizer {
     this.renderer.render(FFTsample);
   }
 
+  preview () {
+    this.renderer.preview();
+  }
+
   listen () {
     this.renderer.listen();
   }

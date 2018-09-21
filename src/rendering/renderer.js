@@ -603,6 +603,7 @@ export default class Renderer {
   listen () {
     this.audio.sampleAudio();
     this.audioLevels.updateAudioLevels(this.fps, this.frameNum);
+    this.calcTimeAndFPS();
 
     const globalVars = {
       frame: this.frameNum,
@@ -624,6 +625,31 @@ export default class Renderer {
 
     window.FFTsamples = window.FFTsamples || [];
     window.FFTsamples.push(globalVars);
+  }
+
+  preview () {
+    this.audio.sampleAudio();
+    this.audioLevels.updateAudioLevels(this.fps, this.frameNum);
+
+    const globalVars = {
+      frame: this.frameNum,
+      time: this.time,
+      fps: this.fps,
+      bass: this.audioLevels.bass,
+      bass_att: this.audioLevels.bass_att,
+      mid: this.audioLevels.mid,
+      mid_att: this.audioLevels.mid_att,
+      treb: this.audioLevels.treb,
+      treb_att: this.audioLevels.treb_att,
+      meshx: this.mesh_width,
+      meshy: this.mesh_height,
+      aspectx: this.invAspectx,
+      aspecty: this.invAspecty,
+      pixelsx: this.texsizeX,
+      pixelsy: this.texsizeY
+    };
+
+    this.render(globalVars);
   }
 
   render (FFTsample) {
