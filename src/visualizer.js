@@ -208,8 +208,8 @@ export default class Visualizer {
     this.renderer.setOutputAA(useAA);
   }
 
-  render (FFTsample) {
-    this.renderer.render(FFTsample);
+  render (sample) {
+    this.renderer.render(sample);
   }
 
   preview () {

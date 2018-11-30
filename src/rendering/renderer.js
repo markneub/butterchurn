@@ -623,8 +623,10 @@ export default class Renderer {
       pixelsy: this.texsizeY
     };
 
-    window.FFTsamples = window.FFTsamples || [];
-    window.FFTsamples.push(globalVars);
+    window.butterSamples = window.butterSamples || [];
+    window.butterSamples.push({
+      globalVars
+    });
   }
 
   preview () {
@@ -649,22 +651,23 @@ export default class Renderer {
       pixelsy: this.texsizeY
     };
 
-    this.render(globalVars);
+    this.render({
+      globalVars
+    });
   }
 
-  render (FFTsample) {
+  render (sample) {
+    const { globalVars } = sample;
     this.frameNum += 1;
 
-    // console.log(this.blending, FFTsample.frame, this.blendStartTime, this.blendDuration);
     if (this.blending) {
       this.blendProgress =
-        ((FFTsample.frame - this.blendStartTime) / 60) / this.blendDuration;
+        ((globalVars.frame - this.blendStartTime) / 60) / this.blendDuration;
       if (this.blendProgress > 1.0) {
         this.blending = false;
       }
     }
 
-    const globalVars = FFTsample;
     const prevGlobalVars = Object.assign({}, globalVars);
     prevGlobalVars.gmegabuf = this.prevPresetEquationRunner.gmegabuf;
 
